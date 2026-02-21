@@ -8,6 +8,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // ✅ tambah ni
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -65,6 +66,7 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* 🔐 Password + Toggle */}
           <div>
             <label
               htmlFor="password"
@@ -72,16 +74,27 @@ export default function LoginPage() {
             >
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-              placeholder="password"
-            />
+
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border px-3 py-2 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                placeholder="password"
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-2 px-2 text-xs font-medium text-slate-500 hover:text-slate-700 focus:outline-none"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -98,10 +111,6 @@ export default function LoginPage() {
             {isSubmitting ? "Logging in..." : "Login"}
           </button>
         </form>
-
-        <p className="mt-4 text-xs text-slate-400">
-          Hint: gunakan user seeder (contoh: admin@akoptima.com / password)
-        </p>
       </div>
     </div>
   );

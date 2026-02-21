@@ -1,203 +1,185 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  getToken,
+  getCurrentUser,
+  AuthUser,
+} from "../../../(_lib)/apiClient";
 
 type DocumentItem = {
   id: number;
   title: string;
-  description: string | null;
-  file_name: string;
-  file_path: string;
-  file_type: string;
-  file_size: number;
-  category: {
-    id: number;
-    title: string;
-  } | null;
-  department: {
-    id: number;
-    name: string;
-  } | null;
-  uploaded_by_user: {
-    id: number;
-    name: string;
-    email: string;
-  } | null;
-  access_level: string;
-  download_count: number;
-  created_at: string;
+  description?: string | null;
+  access_level: "public" | "department" | "private";
+  file_type?: string | null;
+  file_size?: number | null;
+  created_at?: string;
+  category?: { id: number; title?: string; name?: string } | null;
+  department?: { id: number; name: string } | null;
+  uploader?: { id: number; name: string } | null;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+type PageProps = {
+  params: { id: string };
+};
 
-export default function DocumentDetailPage() {
-  const params = useParams();
+export default function DocumentDetailPage({ params }: PageProps) {
+  const { id } = params; // <-- ini akan ada, takkan undefined
   const router = useRouter();
-  const id = params?.id;
-
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [doc, setDoc] = useState<DocumentItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!id) return;
+    const token = getToken();
+    const u = getCurrentUser();
+
+    if (!token || !u) {
+      router.push("/login");
+      return;
+    }
+
+    setUser(u);
 
     const fetchDoc = async () => {
       try {
-        setLoading(true);
-        setError(null);
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
-        const token =
-          typeof window !== "undefined"
-            ? localStorage.getItem("token")
-            : null;
-
-        const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
+        const res = await fetch(`${baseUrl}/api/v1/documents/${id}`, {
           headers: {
+            Authorization: `Bearer ${token}`,
             Accept: "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
 
+        const json = await res.json();
         if (!res.ok) {
-          throw new Error(`Gagal dapatkan document (status ${res.status})`);
+          setError(json.message ?? "Gagal memuatkan dokumen.");
+          return;
         }
 
-        const data = await res.json();
-        // Kalau API balas { data: { ... } } tukar kat sini:
-        const docData = data.data ?? data;
-
-        setDoc(docData);
-      } catch (err: any) {
-        setError(err.message || "Ralat tidak diketahui");
+        const d = (json.data ?? json) as DocumentItem;
+        setDoc(d);
+      } catch (err) {
+        console.error(err);
+        setError("Gagal memuatkan dokumen.");
       } finally {
         setLoading(false);
       }
     };
 
     fetchDoc();
-  }, [id]);
+  }, [id, router]);
 
-  const handleDownload = () => {
-    if (!doc) return;
-
-    // Kalau backend ada endpoint khas download, tukar URL kat sini
-    const downloadUrl =
-      doc.file_path.startsWith("http") || doc.file_path.startsWith("/")
-        ? doc.file_path
-        : `${API_BASE_URL}/storage/${doc.file_path}`;
-
-    window.open(downloadUrl, "_blank");
+  const formatSize = (bytes?: number | null) => {
+    if (!bytes || bytes <= 0) return "-";
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(2)} MB`;
   };
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <p className="animate-pulse text-gray-500">Loading document...</p>
-      </div>
-    );
-  }
+  const formatDate = (iso?: string) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    return d.toLocaleString();
+  };
 
-  if (error || !doc) {
-    return (
-      <div className="p-6">
-        <button
-          onClick={() => router.back()}
-          className="mb-4 rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
-        >
-          ← Kembali
-        </button>
-        <p className="text-red-600">
-          {error || "Dokumen tidak ditemui atau tiada akses."}
-        </p>
-      </div>
-    );
-  }
+  const handleDownload = async () => {
+    const token = getToken();
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    const baseUrl =
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+    const url = `${baseUrl}/api/v1/documents/${id}/download?token=${encodeURIComponent(
+      token
+    )}`;
+
+    window.open(url, "_blank");
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Breadcrumb + Back */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">
-            Documents
-          </p>
-          <h1 className="text-2xl font-semibold">{doc.title}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.back()}
-            className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
-          >
-            ← Kembali
-          </button>
-          <button
-            onClick={handleDownload}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Download
-          </button>
-        </div>
-      </div>
+    <div className="p-6">
+      <Link
+        href="/documents"
+        className="text-sm text-blue-600 hover:underline"
+      >
+        ← Back to Documents
+      </Link>
 
-      {/* Overview card */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border bg-white p-4 shadow-sm md:col-span-2">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">
-            Description
-          </h2>
-          <p className="text-sm text-gray-700">
-            {doc.description || "Tiada description."}
-          </p>
-        </div>
+      <h1 className="text-xl font-semibold mt-4 mb-4">Document Detail</h1>
 
-        <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Document Info</h2>
+      {error && <p className="text-red-600 mb-3">{error}</p>}
+      {loading && <p>Loading...</p>}
 
-          <div className="text-xs text-gray-500 space-y-1">
-            <p>
-              <span className="font-medium text-gray-700">File name:</span>{" "}
-              {doc.file_name}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Type:</span>{" "}
-              {doc.file_type}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Size:</span>{" "}
-              {(doc.file_size / 1024).toFixed(1)} KB
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Category:</span>{" "}
-              {doc.category?.title ?? "-"}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Department:</span>{" "}
-              {doc.department?.name ?? "-"}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Access level:</span>{" "}
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase">
-                {doc.access_level}
-              </span>
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Uploaded by:</span>{" "}
-              {doc.uploaded_by_user?.name ?? "-"}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Downloads:</span>{" "}
-              {doc.download_count}
-            </p>
-            <p>
-              <span className="font-medium text-gray-700">Created at:</span>{" "}
-              {new Date(doc.created_at).toLocaleString()}
-            </p>
+      {!loading && doc && (
+        <div className="max-w-xl space-y-3">
+          <div>
+            <div className="text-xs text-gray-500">Title</div>
+            <div className="font-semibold">{doc.title}</div>
           </div>
+
+          {doc.description && (
+            <div>
+              <div className="text-xs text-gray-500">Description</div>
+              <div>{doc.description}</div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-gray-500">Department</div>
+              <div>{doc.department?.name ?? "-"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Category</div>
+              <div>
+                {doc.category?.name ?? doc.category?.title ?? "-"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Access</div>
+              <div className="uppercase text-xs font-semibold">
+                {doc.access_level}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Type / Size</div>
+              <div>{doc.file_type ?? "-"}</div>
+              <div className="text-xs text-gray-500">
+                {formatSize(doc.file_size)}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500">Uploaded By</div>
+            <div>{doc.uploader?.name ?? "-"}</div>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500">Created At</div>
+            <div>{formatDate(doc.created_at)}</div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm"
+          >
+            Download File
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

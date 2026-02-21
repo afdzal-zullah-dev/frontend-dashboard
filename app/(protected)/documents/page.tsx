@@ -1,222 +1,215 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getDocuments, DocumentItem } from "../../(_lib)/apiClient";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  getToken,
+  getCurrentUser,
+  AuthUser,
+} from "../../(_lib)/apiClient";
+
+type DocumentItem = {
+  id: number;
+  title: string;
+  description?: string | null;
+  access_level: "public" | "department" | "private";
+  file_type?: string | null;
+  file_size?: number | null;
+  created_at?: string;
+  category?: {
+    id: number;
+    title?: string;
+    name?: string;
+  } | null;
+  department?: {
+    id: number;
+    name: string;
+  } | null;
+  uploader?: {
+    id: number;
+    name: string;
+  } | null;
+};
 
 export default function DocumentsPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadDocuments = async (searchTerm?: string) => {
-    setIsLoading(true);
-    setError("");
-    try {
-      const items = await getDocuments(
-        searchTerm ? { search: searchTerm } : undefined
-      );
-      setDocuments(items);
-    } catch (err: any) {
-      setError(err.message || "Gagal memuatkan senarai dokumen.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    // load kali pertama
-    loadDocuments();
-  }, []);
+    const token = getToken();
+    const u = getCurrentUser();
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    loadDocuments(search);
-  };
+    if (!token || !u) {
+      router.push("/login");
+      return;
+    }
 
-  const formatSize = (bytes: number) => {
-    if (!bytes) return "0 KB";
+    setUser(u);
+
+    const fetchDocs = async () => {
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+        const res = await fetch(`${baseUrl}/api/v1/documents`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.message ?? "Gagal memuatkan dokumen.");
+          return;
+        }
+
+        const docs = (json.data ?? json) as DocumentItem[];
+        setDocuments(docs);
+      } catch (err) {
+        console.error(err);
+        setError("Gagal memuatkan dokumen.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDocs();
+  }, [router]);
+
+  const filteredDocuments = useMemo(() => {
+    if (!search.trim()) return documents;
+
+    const term = search.toLowerCase();
+    return documents.filter((doc) => {
+      const title = doc.title?.toLowerCase() ?? "";
+      const desc = doc.description?.toLowerCase() ?? "";
+      return title.includes(term) || desc.includes(term);
+    });
+  }, [documents, search]);
+
+  const formatSize = (bytes?: number | null) => {
+    if (!bytes || bytes <= 0) return "-";
     const kb = bytes / 1024;
     if (kb < 1024) return `${kb.toFixed(1)} KB`;
     const mb = kb / 1024;
-    return `${mb.toFixed(1)} MB`;
+    return `${mb.toFixed(2)} MB`;
   };
 
-  const formatDate = (value?: string) => {
-    if (!value) return "-";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
+  const formatDate = (iso?: string) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
     return d.toLocaleDateString();
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Documents</h1>
-          <p className="text-sm text-slate-500">
-            Senarai dokumen yang anda boleh akses.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-          onClick={() => alert("sorry under maintenance")}
+    <div className="p-6">
+      {/* HEADER + BUTTON HIJAU */}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold">Documents List</h1>
+        <Link
+          href="/documents/upload"
+          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
         >
           + Upload Document
-        </button>
+        </Link>
       </div>
 
-      {/* Search bar */}
-      <form
-        onSubmit={handleSearchSubmit}
-        className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col md:flex-row md:items-center gap-3"
-      >
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-slate-500 mb-1">
-            Search
-          </label>
-          <input
-            type="text"
-            placeholder="Cari ikut title atau description..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
-        </div>
-        <div className="flex gap-2 pt-1">
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              loadDocuments();
-            }}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Reset
-          </button>
-        </div>
-      </form>
+      {/* SEARCH BAR */}
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search by title or description..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full md:w-80 border rounded px-3 py-2 text-sm"
+        />
+      </div>
 
-      {/* Error / loading */}
-      {error && (
-        <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">
-          {error}
-        </div>
+      {error && <p className="text-red-600 mb-3">{error}</p>}
+      {loading && <p>Loading...</p>}
+
+      {!loading && filteredDocuments.length === 0 && (
+        <p className="text-gray-600">Tiada dokumen.</p>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-800">
-            Documents List
-          </h2>
-          <span className="text-xs text-slate-500">
-            {isLoading
-              ? "Loading..."
-              : `${documents.length} document${
-                  documents.length !== 1 ? "s" : ""
-                }`}
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
+      {!loading && filteredDocuments.length > 0 && (
+        <div className="overflow-x-auto border rounded-lg">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <thead className="bg-gray-100">
               <tr>
-                <th className="px-4 py-2">Title</th>
-                <th className="px-4 py-2">Department</th>
-                <th className="px-4 py-2">Category</th>
-                <th className="px-4 py-2">Access</th>
-                <th className="px-4 py-2">Type / Size</th>
-                <th className="px-4 py-2">Uploaded By</th>
-                <th className="px-4 py-2">Created</th>
+                <th className="px-4 py-2 text-left">Title</th>
+                <th className="px-4 py-2 text-left">Department</th>
+                <th className="px-4 py-2 text-left">Category</th>
+                <th className="px-4 py-2 text-left">Access</th>
+                <th className="px-4 py-2 text-left">Type / Size</th>
+                <th className="px-4 py-2 text-left">Uploaded By</th>
+                <th className="px-4 py-2 text-left">Created</th>
                 <th className="px-4 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {documents.length === 0 && !isLoading ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-6 text-center text-sm text-slate-500"
-                  >
-                    Tiada dokumen ditemui.
+              {filteredDocuments.map((doc) => (
+                <tr key={doc.id} className="border-t">
+                  <td className="px-4 py-2">
+                    <div className="font-medium">{doc.title}</div>
+                    {doc.description && (
+                      <div className="text-xs text-gray-500">
+                        {doc.description}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {doc.department?.name ?? "-"}
+                  </td>
+                  <td className="px-4 py-2">
+                    {doc.category?.name ??
+                      doc.category?.title ??
+                      "-"}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+                      {doc.access_level.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <div>{doc.file_type ?? "-"}</div>
+                    <div className="text-xs text-gray-500">
+                      {formatSize(doc.file_size)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2">
+                    {doc.uploader?.name ?? "-"}
+                  </td>
+                  <td className="px-4 py-2">
+                    {formatDate(doc.created_at)}
+                  </td>
+                  <td className="px-4 py-2 text-right space-x-2">
+                    <Link
+                      href={`/documents/${doc.id}`}
+                      className="border border-gray-300 rounded px-2 py-1 text-xs hover:bg-gray-50"
+                    >
+                      View
+                    </Link>
+                    <Link
+                      href={`/documents/${doc.id}/edit`}
+                      className="border border-gray-300 rounded px-2 py-1 text-xs hover:bg-gray-50"
+                    >
+                      Edit
+                    </Link>
                   </td>
                 </tr>
-              ) : (
-                documents.map((doc) => (
-                  <tr
-                    key={doc.id}
-                    className="border-t border-slate-100 hover:bg-slate-50/70"
-                  >
-                    <td className="px-4 py-2 align-top">
-                      <div className="font-medium text-slate-800">
-                        {doc.title}
-                      </div>
-                      {doc.description && (
-                        <div className="text-xs text-slate-500 line-clamp-2">
-                          {doc.description}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 align-top text-xs text-slate-600">
-                      {doc.department?.name || "-"}
-                    </td>
-                    <td className="px-4 py-2 align-top text-xs text-slate-600">
-                      {doc.category?.title || "-"}
-                    </td>
-                    <td className="px-4 py-2 align-top">
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium uppercase text-slate-700">
-                        {doc.access_level}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 align-top text-xs text-slate-600">
-                      <div>{doc.file_type}</div>
-                      <div className="text-slate-400">
-                        {formatSize(doc.file_size)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 align-top text-xs text-slate-600">
-                      {doc.uploaded_by_user?.name || "-"}
-                    </td>
-                    <td className="px-4 py-2 align-top text-xs text-slate-600">
-                      {formatDate(doc.created_at)}
-                    </td>
-                    <td className="px-4 py-2 align-top text-right text-xs">
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-300 px-2.5 py-1 hover:bg-slate-50 mr-1"
-                        onClick={() =>
-                          alert(`View detail doc ID ${doc.id} (coming soon)`)
-                        }
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-300 px-2.5 py-1 hover:bg-slate-50"
-                        onClick={() =>
-                          alert(`Edit doc ID ${doc.id} (coming soon)`)
-                        }
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -48,28 +48,40 @@ export default function DashboardPage() {
       };
     }
 
-    const total = documents.length;
+    const total = Array.isArray(documents) ? documents.length : 0;
 
-    const department = documents.filter(
-      (d) => d.department?.id === user.department_id
-    ).length;
+    const department = Array.isArray(documents)
+      ? documents.filter((d) => d.department?.id === user.department_id).length
+      : 0;
 
-    const myUploads = documents.filter(
-      (d) => d.uploaded_by_user?.id === user.id
-    ).length;
+    // 👍 cuba baca beberapa field: uploaded_by_user.id / uploaded_by / uploadedBy
+    const myUploads = Array.isArray(documents)
+      ? documents.filter((d) => {
+          const anyDoc = d as any;
+          const uploadedById =
+            d.uploaded_by_user?.id ??
+            anyDoc.uploaded_by ??
+            anyDoc.uploadedBy ??
+            null;
+
+          return uploadedById === user.id;
+        }).length
+      : 0;
 
     // ambik 5 terbaru
-    const recent = [...documents]
-      .sort((a, b) => {
-        if (a.created_at && b.created_at) {
-          return (
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
-          );
-        }
-        return (b.id || 0) - (a.id || 0);
-      })
-      .slice(0, 5);
+    const recent = Array.isArray(documents)
+      ? [...documents]
+          .sort((a, b) => {
+            if (a.created_at && b.created_at) {
+              return (
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime()
+              );
+            }
+            return (b.id || 0) - (a.id || 0);
+          })
+          .slice(0, 5)
+      : [];
 
     return { total, department, myUploads, recent };
   }, [documents, user]);
